@@ -121,7 +121,7 @@ class MySQLProvider extends DataProvider {
 			}else{
 				$denied = explode(",", (string) $val["denied"]);
 			}
-			$plot = new Plot($levelName, $X, $Z, (string) $val["name"], (string) $val["owner"], $helpers, $denied, (string) $val["biome"], (bool) $val["pvp"], (int) $val["id"]);
+			$plot = new Plot($levelName, $X, $Z, (string) $val["name"], (string) $val["owner"], $helpers, $denied, (string) $val["biome"], (string) $val["pvp"], (int) $val["id"]);
 		}else{
 			$plot = new Plot($levelName, $X, $Z);
 		}
