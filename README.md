@@ -7,7 +7,7 @@ Dies ist ein Fork von http://github.com/jasonwynn10/MyPlot
 
 Command     | Description | Permission's               | Default
 ----------- | ---------   | -------------------------- | --------
-/p help     | Befehls Liste des MyPlot Plugins.       | ,myplot.command.help              | true
+/p help     | Befehls Liste des MyPlot Plugins.       | myplot.command.help              | true
 none        | Wie viele Grundstücke ein Spieler besitzen darf. | myplot.claimplots.[Number] | none
 
 ----------------
