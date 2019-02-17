@@ -142,7 +142,7 @@ class MyPlot extends PluginBase
 	 * @return bool
 	 */
 	public function generateLevel(string $levelName, string $generator = "myplot", array $settings = []) : bool {
-		if($this->getServer()->getLevelManger()->isLevelGenerated($levelName) === true) {
+		if($this->getServer()->getLevelManager()->isLevelGenerated($levelName) === true) {
 			return false;
 		}
 		$generator = GeneratorManager::getGenerator($generator);
