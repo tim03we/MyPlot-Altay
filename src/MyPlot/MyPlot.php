@@ -142,7 +142,7 @@ class MyPlot extends PluginBase
 	 * @return bool
 	 */
 	public function generateLevel(string $levelName, string $generator = "myplot", array $settings = []) : bool {
-		if($this->getServer()->isLevelGenerated($levelName) === true) {
+		if($this->getServer()->getLevelManger()->isLevelGenerated($levelName) === true) {
 			return false;
 		}
 		$generator = GeneratorManager::getGenerator($generator);
@@ -154,7 +154,7 @@ class MyPlot extends PluginBase
 		$default = ["RestrictEntityMovement" => $pluginConfig->getNested("DefaultWorld.RestrictEntityMovement", true), "RestrictPVP" => $pluginConfig->get("DefaultWorld.RestrictPVP", false), "UpdatePlotLiquids" => $pluginConfig->getNested("DefaultWorld.UpdatePlotLiquids", false), "ClaimPrice" => $pluginConfig->getNested("DefaultWorld.ClaimPrice", 0), "ClearPrice" => $pluginConfig->getNested("DefaultWorld.ClearPrice", 0), "DisposePrice" => $pluginConfig->getNested("DefaultWorld.DisposePrice", 0), "ResetPrice" => $pluginConfig->getNested("DefaultWorld.ResetPrice", 0)];
 		new Config($this->getDataFolder()."worlds".DIRECTORY_SEPARATOR.$levelName.".yml", Config::YAML, $default);
 		$settings = ["preset" => json_encode($settings)];
-		return $this->getServer()->generateLevel($levelName, null, $generator, $settings);
+		return $this->getServer()->getLevelManager()->generateLevel($levelName, null, $generator, $settings);
 	}
 
 	/**
