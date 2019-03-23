@@ -37,7 +37,7 @@ class DenyPlayerSubCommand extends SubCommand
 			$sender->sendMessage(TextFormat::RED . $this->translateString("notowner"));
 			return true;
 		}
-		$dplayer = $this->getPlugin()->getServer()->getOfflinePlayer($dplayer)->getPlayer() ?? $this->getPlugin()->getServer()->getOfflinePlayer($dplayer);
+		$dplayer = $this->getPlugin()->getServer()->getPlayer($dplayer) ?? $this->getPlugin()->getServer()->getOfflinePlayer($dplayer);
 		if(!$dplayer instanceof Player) {
 			$sender->sendMessage($this->translateString("denyplayer.notaplayer"));
 			return true;
@@ -48,11 +48,7 @@ class DenyPlayerSubCommand extends SubCommand
 				$dplayer->sendMessage($this->translateString("denyplayer.attempteddeny", [$sender->getName()]));
 			return true;
 		}
-		if(!$plot->denyPlayer($dplayer->getName())) {
-			$sender->sendMessage($this->translateString("denyplayer.alreadydenied", [$dplayer->getName()]));
-			return true;
-		}
-		if($this->getPlugin()->savePlot($plot)) {
+		if($this->getPlugin()->addPlotDenied($plot, $dplayer->getName())) {
 			$sender->sendMessage($this->translateString("denyplayer.success1", [$dplayer->getName()]));
 			if($dplayer instanceof Player) {
 				$dplayer->sendMessage($this->translateString("denyplayer.success2", [$plot->X, $plot->Z, $sender->getName()]));

@@ -37,12 +37,8 @@ class AddHelperSubCommand extends SubCommand
 			$sender->sendMessage(TextFormat::RED . $this->translateString("notowner"));
 			return true;
 		}
-		$helper = $this->getPlugin()->getServer()->getOfflinePlayer($helper)->getPlayer() ?? $this->getPlugin()->getServer()->getOfflinePlayer($helper);
-		if(!$plot->addHelper($helper->getName())) {
-			$sender->sendMessage($this->translateString("addhelper.alreadyone", [$helper->getName()]));
-			return true;
-		}
-		if($this->getPlugin()->savePlot($plot)) {
+		$helper = $this->getPlugin()->getServer()->getPlayer($helper) ?? $this->getPlugin()->getServer()->getOfflinePlayer($helper);
+		if($this->getPlugin()->addPlotHelper($plot, $helper->getName())) {
 			$sender->sendMessage($this->translateString("addhelper.success", [$helper->getName()]));
 		}else{
 			$sender->sendMessage(TextFormat::RED . $this->translateString("error"));

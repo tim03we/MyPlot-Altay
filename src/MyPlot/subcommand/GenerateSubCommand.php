@@ -1,5 +1,7 @@
 <?php
+
 declare(strict_types=1);
+
 namespace MyPlot\subcommand;
 
 use pocketmine\command\CommandSender;
@@ -7,6 +9,7 @@ use pocketmine\utils\TextFormat;
 
 class GenerateSubCommand extends SubCommand
 {
+
 	/**
 	 * @param CommandSender $sender
 	 *
@@ -27,7 +30,7 @@ class GenerateSubCommand extends SubCommand
 			return false;
 		}
 		$levelName = $args[0];
-		if($sender->getServer()->->getLevelManager()->isLevelGenerated($levelName)) {
+		if($sender->getServer()->isLevelGenerated($levelName)) {
 			$sender->sendMessage(TextFormat::RED . $this->translateString("generate.exists", [$levelName]));
 			return true;
 		}

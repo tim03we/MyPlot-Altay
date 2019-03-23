@@ -1,10 +1,16 @@
 <?php
+
 declare(strict_types=1);
+
 namespace MyPlot;
 
 use EssentialsPE\Loader;
-use MyPlot\block\Lava;
-use MyPlot\block\Water;
+use MyPlot\events\MyPlotClearEvent;
+use MyPlot\events\MyPlotDisposeEvent;
+use MyPlot\events\MyPlotGenerationEvent;
+use MyPlot\events\MyPlotResetEvent;
+use MyPlot\events\MyPlotSettingEvent;
+use MyPlot\events\MyPlotTeleportEvent;
 use MyPlot\provider\DataProvider;
 use MyPlot\provider\EconomyProvider;
 use MyPlot\provider\EconomySProvider;
@@ -16,15 +22,15 @@ use MyPlot\provider\SQLiteDataProvider;
 use MyPlot\provider\YAMLDataProvider;
 use MyPlot\task\ClearPlotTask;
 use onebone\economyapi\EconomyAPI;
-use pocketmine\block\BlockFactory;
 use pocketmine\event\level\LevelLoadEvent;
-use pocketmine\lang\Language;
+use pocketmine\lang\BaseLang;
 use pocketmine\level\biome\Biome;
 use pocketmine\level\format\Chunk;
 use pocketmine\level\generator\GeneratorManager;
 use pocketmine\level\Level;
 use pocketmine\level\Position;
 use pocketmine\math\AxisAlignedBB;
+use pocketmine\math\Vector3;
 use pocketmine\permission\Permission;
 use pocketmine\permission\PermissionManager;
 use pocketmine\Player;
@@ -60,7 +66,7 @@ class MyPlot extends PluginBase
 	 *
 	 * @return BaseLang
 	 */
-	public function getLanguage() : Language {
+	public function getLanguage() : BaseLang {
 		return $this->baseLang;
 	}
 
@@ -142,7 +148,9 @@ class MyPlot extends PluginBase
 	 * @return bool
 	 */
 	public function generateLevel(string $levelName, string $generator = "myplot", array $settings = []) : bool {
-		if($this->getServer()->getLevelManager()->isLevelGenerated($levelName) === true) {
+		$ev = new MyPlotGenerationEvent($levelName, $generator, $settings);
+		$ev->call();
+		if($ev->isCancelled() or $this->getServer()->isLevelGenerated($levelName)) {
 			return false;
 		}
 		$generator = GeneratorManager::getGenerator($generator);
@@ -150,11 +158,10 @@ class MyPlot extends PluginBase
 			$this->getConfig()->reload();
 			$settings = $this->getConfig()->get("DefaultWorld", []);
 		}
-		$pluginConfig = $this->getConfig();
-		$default = ["RestrictEntityMovement" => $pluginConfig->getNested("DefaultWorld.RestrictEntityMovement", true), "RestrictPVP" => $pluginConfig->get("DefaultWorld.RestrictPVP", false), "UpdatePlotLiquids" => $pluginConfig->getNested("DefaultWorld.UpdatePlotLiquids", false), "ClaimPrice" => $pluginConfig->getNested("DefaultWorld.ClaimPrice", 0), "ClearPrice" => $pluginConfig->getNested("DefaultWorld.ClearPrice", 0), "DisposePrice" => $pluginConfig->getNested("DefaultWorld.DisposePrice", 0), "ResetPrice" => $pluginConfig->getNested("DefaultWorld.ResetPrice", 0)];
+		$default = $this->getConfig()->get("DefaultWorld", []);
 		new Config($this->getDataFolder()."worlds".DIRECTORY_SEPARATOR.$levelName.".yml", Config::YAML, $default);
 		$settings = ["preset" => json_encode($settings)];
-		return $this->getServer()->getLevelManager()->generateLevel($levelName, null, $generator, $settings);
+		return $this->getServer()->generateLevel($levelName, null, $generator, $settings);
 	}
 
 	/**
@@ -276,23 +283,36 @@ class MyPlot extends PluginBase
 		$plotSize = $plotLevel->plotSize;
 		$roadWidth = $plotLevel->roadWidth;
 		$totalSize = $plotSize + $roadWidth;
-		$directionalX = $totalSize * $plot->X;
-		$directionalZ = $totalSize * $plot->Z;
-		if($directionalX >= 0) {
+		$directionalX = $totalSize * $plot->X; // x closest to 0
+		$directionalZ = $totalSize * $plot->Z; // z closest to 0
+
+		$x = $directionalX + $totalSize - 1; // -1 should put us within plot area
+		$z = $directionalZ + $totalSize - 1; // -1 should put us within plot area
+		if($x >= 0) {
+			$difX = $x % $totalSize;
+		}else{
+			$difX = abs(($x - $plotSize + 1) % $totalSize);
+		}
+		if($z >= 0) {
+			$difZ = $z % $totalSize;
+		}else{
+			$difZ = abs(($z - $plotSize + 1) % $totalSize);
+		}
+		if($difX > $plotSize - 1) {
 			$minX = $directionalX;
-			$maxX = $minX + $plotSize;
+			$maxX = $directionalX + $totalSize;
 		}else{
+			$minX = $directionalX - $totalSize;
 			$maxX = $directionalX;
-			$minX = $maxX - $plotSize;
 		}
-		if($directionalZ >= 0) {
+		if($difZ > $plotSize - 1) {
 			$minZ = $directionalZ;
-			$maxZ = $minZ + $plotSize;
+			$maxZ = $directionalZ + $totalSize;
 		}else{
+			$minZ = $directionalZ - $totalSize;
 			$maxZ = $directionalZ;
-			$minZ = $maxZ - $plotSize;
 		}
-		// TODO: improve math
+
 		return new AxisAlignedBB($minX, 0, $minZ, $maxX, Level::Y_MAX, $maxZ);
 	}
 
@@ -308,6 +328,11 @@ class MyPlot extends PluginBase
 	 * @return bool
 	 */
 	public function teleportPlayerToPlot(Player $player, Plot $plot, bool $center = false) : bool {
+		$ev = new MyPlotTeleportEvent($plot, $player, $center);
+		$ev->call();
+		if($ev->isCancelled()) {
+			return false;
+		}
 		if($center)
 			return $this->teleportMiddle($player, $plot);
 		$plotLevel = $this->getLevelSettings($plot->levelName);
@@ -321,6 +346,49 @@ class MyPlot extends PluginBase
 	}
 
 	/**
+	 * Claims a plot in a players name
+	 *
+	 * @api
+	 *
+	 * @param Plot $plot
+	 * @param string $claimer
+	 * @param string $plotName
+	 *
+	 * @return bool
+	 */
+	public function claimPlot(Plot $plot, string $claimer, string $plotName = "") : bool {
+		$newPlot = clone $plot;
+		$newPlot->owner = $claimer;
+		$ev = new MyPlotSettingEvent($plot, $newPlot);
+		$ev->call();
+		if($ev->isCancelled()) {
+			return false;
+		}
+		$plot = $ev->getPlot();
+		if(!empty($plotName)) {
+			$this->renamePlot($plot, $plotName);
+		}
+		return $this->savePlot($plot);
+	}
+
+	/**
+	 * @param Plot $plot
+	 * @param string $newName
+	 *
+	 * @return bool
+	 */
+	public function renamePlot(Plot $plot, string $newName = "") : bool {
+		$newPlot = clone $plot;
+		$newPlot->name = $newName;
+		$ev = new MyPlotSettingEvent($plot, $newPlot);
+		$ev->call();
+		if($ev->isCancelled()) {
+			return false;
+		}
+		return $this->savePlot($ev->getPlot());
+	}
+
+	/**
 	 * Reset all the blocks inside a plot
 	 *
 	 * @api
@@ -331,6 +399,13 @@ class MyPlot extends PluginBase
 	 * @return bool
 	 */
 	public function clearPlot(Plot $plot, int $maxBlocksPerTick = 256) : bool {
+		$ev = new MyPlotClearEvent($plot, $maxBlocksPerTick);
+		$ev->call();
+		if($ev->isCancelled()) {
+			return false;
+		}
+		$plot = $ev->getPlot();
+		$maxBlocksPerTick = $ev->getMaxBlocksPerTick();
 		if(!$this->isLevelLoaded($plot->levelName)) {
 			return false;
 		}
@@ -358,6 +433,11 @@ class MyPlot extends PluginBase
 	 * @return bool
 	 */
 	public function disposePlot(Plot $plot) : bool {
+		$ev = new MyPlotDisposeEvent($plot);
+		$ev->call();
+		if($ev->isCancelled()) {
+			return false;
+		}
 		return $this->dataProvider->deletePlot($plot);
 	}
 
@@ -372,6 +452,10 @@ class MyPlot extends PluginBase
 	 * @return bool
 	 */
 	public function resetPlot(Plot $plot, int $maxBlocksPerTick = 256) : bool {
+		$ev = new MyPlotResetEvent($plot);
+		$ev->call();
+		if($ev->isCancelled())
+			return false;
 		if($this->disposePlot($plot)) {
 			return $this->clearPlot($plot, $maxBlocksPerTick);
 		}
@@ -388,7 +472,16 @@ class MyPlot extends PluginBase
 	 *
 	 * @return bool
 	 */
-	public function setPlotBiome(Plot $plot, Biome $biome) {
+	public function setPlotBiome(Plot $plot, Biome $biome) : bool {
+		$newPlot = clone $plot;
+		$newPlot->biome = strtoupper($biome->getName());
+		$ev = new MyPlotSettingEvent($plot, $newPlot);
+		$ev->call();
+		if($ev->isCancelled()) {
+			return false;
+		}
+		$plot = $ev->getPlot();
+		$biome = Biome::getBiome(constant(Biome::class . "::" . $plot->biome) ?? Biome::PLAINS);
 		$plotLevel = $this->getLevelSettings($plot->levelName);
 		if($plotLevel === null) {
 			return false;
@@ -413,13 +506,97 @@ class MyPlot extends PluginBase
 		foreach($chunkIndexes as $index) {
 			Level::getXZ($index, $plot->X, $plot->Z);
 			$chunk = $level->getChunk($plot->X, $plot->Z, true);
-			foreach($level->getChunkPlayers($plot->X, $plot->Z) as $player) {
+			foreach($level->getViewersForPosition(new Vector3($plot->X, 0, $plot->Z)) as $player) {
 				$player->onChunkChanged($chunk);
 			}
 		}
-		$plot->biome = $biome->getName();
 		$this->savePlot($plot);
 		return true;
+	}
+
+	/**
+	 * @param Plot $plot
+	 * @param bool $pvp
+	 *
+	 * @return bool
+	 */
+	public function setPlotPvp(Plot $plot, bool $pvp) : bool {
+		$newPlot = clone $plot;
+		$newPlot->pvp = $pvp;
+		$ev = new MyPlotSettingEvent($plot, $newPlot);
+		$ev->call();
+		if($ev->isCancelled()) {
+			return false;
+		}
+		return $this->savePlot($ev->getPlot());
+	}
+
+	/**
+	 * @param Plot $plot
+	 * @param string $player
+	 *
+	 * @return bool
+	 */
+	public function addPlotHelper(Plot $plot, string $player) : bool {
+		$newPlot = clone $plot;
+		$ev = new MyPlotSettingEvent($plot, $newPlot);
+		$ev->setCancelled(!$newPlot->addHelper($player));
+		$ev->call();
+		if($ev->isCancelled()) {
+			return false;
+		}
+		return $this->savePlot($ev->getPlot());
+	}
+
+	/**
+	 * @param Plot $plot
+	 * @param string $player
+	 *
+	 * @return bool
+	 */
+	public function removePlotHelper(Plot $plot, string $player) : bool {
+		$newPlot = clone $plot;
+		$ev = new MyPlotSettingEvent($plot, $newPlot);
+		$ev->setCancelled(!$newPlot->removeHelper($player));
+		$ev->call();
+		if($ev->isCancelled()) {
+			return false;
+		}
+		return $this->savePlot($ev->getPlot());
+	}
+
+	/**
+	 * @param Plot $plot
+	 * @param string $player
+	 *
+	 * @return bool
+	 */
+	public function addPlotDenied(Plot $plot, string $player) : bool {
+		$newPlot = clone $plot;
+		$ev = new MyPlotSettingEvent($plot, $newPlot);
+		$ev->setCancelled(!$newPlot->denyPlayer($player));
+		$ev->call();
+		if($ev->isCancelled()) {
+			return false;
+		}
+		return $this->savePlot($ev->getPlot());
+	}
+
+	/**
+	 * @param Plot $plot
+	 * @param string $player
+	 *
+	 * @return bool
+	 */
+	public function removePlotDenied(Plot $plot, string $player) : bool {
+		$newPlot = clone $plot;
+		$ev = new MyPlotSettingEvent($plot, $newPlot);
+		$ev->setCancelled(!$newPlot->unDenyPlayer($player));
+		$ev->call();
+		if($ev->isCancelled()) {
+			return false;
+		}
+		return $this->savePlot($ev->getPlot());
 	}
 
 	/**
@@ -447,23 +624,13 @@ class MyPlot extends PluginBase
 		$level = $this->getServer()->getLevelByName($plot->levelName);
 		$pos = $this->getPlotPosition($plot);
 		$plotSize = $plotLevel->plotSize;
-		$xMax = $pos->x + $plotSize;
-		$zMax = $pos->z + $plotSize;
-		$chunkIndexes = [];
-		for($x = $pos->x; $x < $xMax; $x++) {
-			for($z = $pos->z; $z < $zMax; $z++) {
-				$index = Level::chunkHash($x >> 4, $z >> 4);
-				if(!in_array($index, $chunkIndexes)) {
-					$chunkIndexes[] = $index;
-				}
-				Level::getXZ($index, $pos->x, $pos->z);
-			}
-		}
+		$xMax = ($pos->x + $plotSize) >> 4;
+		$zMax = ($pos->z + $plotSize) >> 4;
 		$chunks = [];
-		foreach($chunkIndexes as $index) {
-			Level::getXZ($index, $plot->X, $plot->Z);
-			$chunk = $level->getChunk($plot->X, $plot->Z, true);
-			$chunks[] = $chunk;
+		for($x = $pos->x >> 4; $x < $xMax; $x++) {
+			for($z = $pos->z >> 4; $z < $zMax; $z++) {
+				$chunks[] = $level->getChunk($x, $z, true);
+			}
 		}
 		return $chunks;
 	}
@@ -520,14 +687,14 @@ class MyPlot extends PluginBase
 	/**
 	 * Teleports the player to the exact center of the plot at nearest open space to the ground level
 	 *
-	 * @api
+	 * @internal
 	 *
 	 * @param Plot $plot
 	 * @param Player $player
 	 *
 	 * @return bool
 	 */
-	public function teleportMiddle(Player $player, Plot $plot) : bool {
+	private function teleportMiddle(Player $player, Plot $plot) : bool {
 		$mid = $this->getPlotMid($plot);
 		if($mid === null) {
 			return false;
@@ -548,8 +715,8 @@ class MyPlot extends PluginBase
 		$this->getLogger()->debug(TF::BOLD . "Loading Languages");
 		// Loading Languages
 		/** @var string $lang */
-		$lang = $this->getConfig()->get("language", Language::FALLBACK_LANGUAGE);
-		$this->baseLang = new Language($lang, $this->getFile() . "resources/");
+		$lang = $this->getConfig()->get("language", BaseLang::FALLBACK_LANGUAGE);
+		$this->baseLang = new BaseLang($lang, $this->getFile() . "resources/");
 		$this->getLogger()->debug(TF::BOLD . "Loading Data Provider settings");
 		// Initialize DataProvider
 		/** @var int $cacheSize */
@@ -619,13 +786,9 @@ class MyPlot extends PluginBase
 		$eventListener = new EventListener($this);
 		$this->getServer()->getPluginManager()->registerEvents($eventListener, $this);
 		$this->getLogger()->debug(TF::BOLD . "Registering Loaded Levels");
-		foreach($this->getServer()->getLevelManager()->getLevels() as $level) {
+		foreach($this->getServer()->getLevels() as $level) {
 			$eventListener->onLevelLoad(new LevelLoadEvent($level));
 		}
-		$this->getLogger()->debug(TF::BOLD . "Loading Particles");
-		BlockFactory::registerBlock(new Water(), true);
-		BlockFactory::registerBlock(new Lava(), true);
-		$this->getLogger()->debug(TF::BOLD . "Registering Blocks");
 		$this->getLogger()->debug(TF::BOLD.TF::GREEN."Enabled!");
 	}
 
