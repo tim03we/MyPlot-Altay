@@ -10,7 +10,7 @@
 #########################################
 
 # The language that should be used in MyPlot
-# Available languages: eng, nl, vi, spa, chs, zho, deu, cze, tur
+# Available languages: eng, nld, vie, spa, chs, zho, deu, cze, tur, kor, fre
 #
 # English language pack by @jasonwynn10
 # Dutch language pack by @Wies
@@ -21,6 +21,8 @@
 # German language pack by @morpheusTP and @SalmonGER
 # Czech language pack by @GamakCZ
 # Turkish language pack by @Eren5960
+# Korean language pack by @Johnmacrocraft
+# French language pack by @ad5001
 language: eng
 
 # The data provider where plot data is stored.
@@ -60,7 +62,7 @@ DefaultWorld:
   RestrictEntityMovement: true
 
   # Restrict battles between players in plot worlds
-  # This setting overrides the settings of individual plots (to be implemented)
+  # This setting overrides the settings of individual plots on world generation
   RestrictPVP: false
 
   # Update liquids (e.g. Water) from updating and moving
